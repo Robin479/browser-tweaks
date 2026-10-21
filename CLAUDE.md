@@ -41,7 +41,12 @@ generically instead (see Conventions). Use placeholders (`example.com`, `{id}`, 
   application's own terminology in each language.
 - Scripts must not contain user-specific values; derive e.g. the current user from the page.
 - **Raise `@version`** in the script header with every user-visible change; Tampermonkey
-  only installs updates when the version increases.
+  only installs updates when the version increases. The tracked `.githooks/pre-push` hook
+  enforces this for pushes to `main`: it refuses a push that changes a `*.user.js` without a new
+  `@version` and, in a terminal, offers to commit a patch bump (then push again). Enable it once
+  per clone with `git config core.hooksPath .githooks` (done in the user's clone);
+  `git push --no-verify` skips it. Pushes from Claude's Bash tool have no terminal, so there
+  the hook only reports — bump the version in the change itself.
 - New script → add a row to the README table (name, short description incl. the target
   application, absolute raw install link — relative links open GitHub's file viewer, not the raw
   file), a "Notes per script" entry if it matches hosts generically, and a `doc/` file.

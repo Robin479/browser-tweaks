@@ -35,6 +35,16 @@ Tampermonkey: *Dashboard* → the script → *Settings* → *Includes/Excludes* 
 - **Bitbucket Dashboard PR Actions** runs on `https://bitbucket.<anything>/dashboard` (e.g.
   `https://bitbucket.example.com/dashboard`).
 
+## Development
+
+Raise a script's `@version` with every change, or Tampermonkey won't update it. A git hook in
+`.githooks/` checks this on `git push` to `main` and offers to commit a patch-version bump.
+Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ## License
 
 [Apache License 2.0](LICENSE)

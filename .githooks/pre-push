@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Refuses a push to main that changes a userscript (*.user.js) without raising its @version,
+# because Tampermonkey only installs updates when the version increases. In a terminal it
+# offers to bump the patch version in a new commit; then run `git push` again.
+# Skip deliberately with `git push --no-verify`.
+# Enable once per clone:  git config core.hooksPath .githooks
+
+set -euo pipefail
+
+ZERO=0000000000000000000000000000000000000000
+
+version_at() { # <commit> <path>
+    git show "$1:$2" | sed -n -E 's|^// @version[[:space:]]+([^[:space:]]+).*|\1|p' | head -n 1
+}
+
+has_terminal() {
+    { : </dev/tty; } 2>/dev/null
+}
+
+# Prints "<path> <version>" for every userscript changed in <remote>..<local> with an unchanged @version.
+stale_scripts() { # <remote sha> <local sha>
+    local path old new
+    git diff --name-only --diff-filter=M "$1" "$2" -- '*.user.js' | while IFS= read -r path; do
+        old=$(version_at "$1" "$path")
+        new=$(version_at "$2" "$path")
+        if [ "$old" = "$new" ]; then
+            printf '%s %s\n' "$path" "$new"
+        fi
+    done
+}
+
+# Raises the patch number of each listed script in the working tree and commits them.
+bump() { # <"path version" lines>
+    local path version next subject body=""
+    while read -r path version; do
+        if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            next="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+        else
+            echo "pre-push: cannot bump '$version' in $path (expected x.y.z); please raise it yourself." >&2
+            return 1
+        fi
+        sed -i -E "s|^(// @version[[:space:]]+)${version//./\\.}([[:space:]]*)$|\1${next}\2|" "$path"
+        git add -- "$path"
+        subject="Bump $path to $next"
+        body+="- $path: $version -> $next"$'\n'
+    done <<<"$1"
+    if [ "$(printf '%s' "$1" | grep -c .)" = 1 ]; then
+        git commit -q -m "$subject"
+    else
+        git commit -q -m "Bump userscript versions" -m "$body"
+    fi
+}
+
+status=0
+while read -r _local_ref local_sha remote_ref remote_sha; do
+    # Only main is served to users; deletions and the very first push of main have nothing to compare.
+    if [ "$remote_ref" != refs/heads/main ] || [ "$local_sha" = "$ZERO" ] || [ "$remote_sha" = "$ZERO" ]; then
+        continue
+    fi
+    if git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+        stale=$(stale_scripts "$remote_sha" "$local_sha")
+    else
+        echo "pre-push: remote main ($remote_sha) is not known locally; fetch first. Skipping version check." >&2
+        continue
+    fi
+    if [ -z "$stale" ]; then
+        continue
+    fi
+    status=1
+    echo "pre-push: userscripts changed without a new @version:" >&2
+    while read -r path version; do
+        echo "  $path (still $version)" >&2
+    done <<<"$stale"
+    
+    head_sha=$(git rev-parse HEAD)
+    mapfile -t paths < <(cut -d ' ' -f 1 <<<"$stale")
+    dirty=$(git diff --name-only HEAD -- "${paths[@]}")
+    if has_terminal && [ "$local_sha" = "$head_sha" ] && [ -z "$dirty" ]; then
+        printf 'Bump the patch version(s) and add a commit? [y/N] ' >/dev/tty
+        read -r answer </dev/tty
+        if [ "$answer" = y ] || [ "$answer" = Y ]; then
+            bump "$stale"
+            echo "pre-push: committed the version bump; run 'git push' again." >&2
+        fi
+    else
+        echo "Raise @version (or push with --no-verify to skip this check). An automatic bump is only" >&2
+        echo "offered in a terminal, when pushing HEAD, without uncommitted changes to these scripts." >&2
+    fi
+done
+exit "$status"
