@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bitbucket Dashboard PR Actions
 // @namespace    https://github.com/Robin479/browser-tweaks
-// @version      1.0.0
+// @version      1.0.1
 // @description  Adds an "Actions" column (needs work / approve / merge / decline) to the open PR lists on the Bitbucket dashboard
 // @author       Kai Kunstmann
 // @homepageURL  https://github.com/Robin479/browser-tweaks
@@ -18,6 +18,8 @@
     
     const PR_HREF = /\/projects\/([^/]+)\/repos\/([^/]+)\/pull-requests\/(\d+)/;
     const MAX_PARALLEL_LOADS = 4;
+    // How long the action buttons stay disabled after Bitbucket re-renders or reorders the PR rows.
+    const REORDER_GUARD_MS = 1000;
     // "Recently closed pull requests" (.closed-pull-requests) gets no actions.
     const OPEN_PR_ROWS = ['reviewing-pull-requests', 'created-pull-requests']
         .map(section => `.dashboard-pull-request-table.${section} tbody tr.pull-request-row`)
@@ -193,6 +195,9 @@
         b.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
+            if (isGuarded()) {
+                return;
+            }
             onClick();
         });
         return b;
@@ -234,6 +239,15 @@
             : vetoes.map(v => v.summaryMessage).join('\n');
     }
     
+    /** Invisible stand-in for the vetoes button, so the Merge buttons line up across rows. */
+    function vetoesPlaceholder() {
+        const span = document.createElement('span');
+        span.className = 'tm-button tm-vetoes tm-hidden';
+        span.setAttribute('aria-hidden', 'true');
+        span.innerHTML = `${WARNING_SVG}<span class="tm-veto-count">0</span>`;
+        return span;
+    }
+    
     function vetoesButton(pr, mergeStatus) {
         const text = vetoText(mergeStatus);
         const count = Math.max(mergeStatus.vetoes?.length ?? 0, 1);
@@ -254,7 +268,7 @@
         });
         mergeButton.textContent = T.merge;
         if (mergeStatus.canMerge) {
-            return [mergeButton];
+            return [vetoesPlaceholder(), mergeButton];
         }
         mergeButton.disabled = true;
         return [vetoesButton(pr, mergeStatus), mergeButton];
@@ -309,6 +323,38 @@
 
     // ---------------------------------------------------------------- DOM wiring
     
+    // Bitbucket occasionally reloads the lists and re-sorts them (e.g. by review status), moving rows
+    // under the cursor. Ignore clicks briefly afterwards so a click cannot hit a different PR.
+    let guardedUntil = 0;
+    let guardTimer;
+    
+    function isGuarded() {
+        return performance.now() < guardedUntil;
+    }
+    
+    function guard() {
+        guardedUntil = performance.now() + REORDER_GUARD_MS;
+        document.documentElement.classList.add('tm-guarded');
+        clearTimeout(guardTimer);
+        guardTimer = setTimeout(() => document.documentElement.classList.remove('tm-guarded'), REORDER_GUARD_MS);
+    }
+    
+    function containsPrRow(node) {
+        return node instanceof Element && (node.matches('tr.pull-request-row') || node.querySelector('tr.pull-request-row') !== null);
+    }
+    
+    /** Rows being removed (a move is a removal plus an insertion) mean the list was re-rendered. */
+    function isRowRemoval(record) {
+        return [...record.removedNodes].some(containsPrRow);
+    }
+    
+    function onMutations(records) {
+        if (records.some(isRowRemoval)) {
+            guard();
+        }
+        scheduleScan();
+    }
+    
     function addHeader(table) {
         const headerRow = table.querySelector('thead tr');
         if (headerRow === null || headerRow.querySelector(`.${HEADER_CLASS}`)) {
@@ -321,13 +367,21 @@
     }
     
     function processRow(row, anchor) {
-        if (row.querySelector(`:scope > .${CELL_CLASS}`)) {
-            return;
-        }
         const [, project, repo, id] = anchor.pathname.match(PR_HREF);
         const pr = { project, repo, id };
+        const key = `${repoKey(pr)}#${id}`;
+        const existing = row.querySelector(`:scope > .${CELL_CLASS}`);
+        if (existing?.dataset.pr === key) {
+            return;
+        }
+        if (existing) {
+            // The row was reused for another PR: its buttons would act on the wrong one.
+            existing.remove();
+            guard();
+        }
         const cell = document.createElement('td');
         cell.className = CELL_CLASS;
+        cell.dataset.pr = key;
         row.append(cell);
         addHeader(row.closest('table'));
         render(cell, pr);
@@ -341,7 +395,6 @@
             }
         }
     }
-    
     
     // Mirrors the PR page: Atlaskit default buttons (their CSS is generated at runtime, so it is
     // re-created here from the design tokens) plus Bitbucket's .reviewer-status-buttons rules.
@@ -370,7 +423,8 @@
                 cursor: not-allowed;
             }
             .${CELL_CLASS} .tm-status-buttons { display: flex; }
-            .${CELL_CLASS} .tm-status-buttons.tm-hidden { visibility: hidden; }
+            .${CELL_CLASS} .tm-hidden { visibility: hidden; }
+            .tm-guarded .${CELL_CLASS} .tm-button { opacity: 0.4; pointer-events: none; }
             .${CELL_CLASS} .tm-needs-work, .${CELL_CLASS} .tm-approve, .${CELL_CLASS} .tm-decline { padding: 0 8px; }
             .${CELL_CLASS} .tm-needs-work { border-top-right-radius: 0; border-bottom-right-radius: 0; }
             .${CELL_CLASS} .tm-approve { margin-left: 2px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
@@ -382,7 +436,7 @@
             .${CELL_CLASS} .tm-approve .aui-icon.inverse { color: var(--ds-surface-sunken); }
             .${CELL_CLASS} .tm-decline .aui-icon { color: var(--ds-background-danger-bold); }
             .${CELL_CLASS} .tm-button:disabled .aui-icon { color: inherit; }
-            .${CELL_CLASS} .tm-vetoes { padding: 0 4px; color: var(--ds-text-warning-inverse, #172b4d); background: var(--ds-background-warning-bold, #f5cd47); }
+            .${CELL_CLASS} .tm-vetoes { padding: 0 4px; min-width: 46px; color: var(--ds-text-warning-inverse, #172b4d); background: var(--ds-background-warning-bold, #f5cd47); }
             .${CELL_CLASS} .tm-vetoes:hover { background: var(--ds-background-warning-bold-hovered, #e2b203); }
             .${CELL_CLASS} .tm-vetoes:active { background: var(--ds-background-warning-bold-pressed, #cf9f02); }
             .${CELL_CLASS} .tm-veto-count { margin: 0 4px 0 0; }
@@ -410,7 +464,7 @@
     
     function start() {
         addStyles();
-        new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+        new MutationObserver(onMutations).observe(document.body, { childList: true, subtree: true });
         scheduleScan();
     }
     

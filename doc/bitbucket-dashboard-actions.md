@@ -1,7 +1,7 @@
 # Bitbucket Dashboard PR Actions — working notes
 
 Script: [`../bitbucket-dashboard-actions.user.js`](../bitbucket-dashboard-actions.user.js)
-Status (2026-10-21): v1.0.0, written and syntax-checked; **not yet verified end-to-end in the
+Status (2026-10-21): v1.0.1, syntax-checked; **not yet verified end-to-end in the
 browser** — the user tests manually and reports back.
 
 ## Goal
@@ -107,6 +107,16 @@ PR page markup of the status buttons:
   last-picked strategy (likely browser localStorage) is **unknown** — HAR had no JS bundles.
   Irrelevant for repos with a single enabled strategy (e.g. only `no-ff`).
 - `retargetDependents: true` as the dialog sent it.
+- Alignment: when a PR is mergeable, an invisible vetoes placeholder (`.tm-hidden`) keeps the
+  Merge buttons in one column; `.tm-vetoes` has `min-width: 46px` like the PR page's button.
+- Reorder guard (v1.0.1): Bitbucket occasionally reloads the lists and re-sorts them (the
+  dashboard requests `order=participant_status`, so freshly approved PRs move down). Trigger
+  unknown (suspected: refetch on window focus, e.g. after `confirm()`); a HAR of an idle
+  dashboard would tell. The script does not fight the reorder; instead, whenever a mutation
+  removes a `tr.pull-request-row` (a move = removal + insertion) or a row is reused for another
+  PR (cell carries `data-pr`, re-rendered on mismatch), all action buttons are disabled for
+  `REORDER_GUARD_MS` (1 s; `html.tm-guarded`, plus a check in the click handler).
+  Rejected: intercepting Bitbucket's list request to keep the old order (fragile).
 - Approving a PR where the user isn't a reviewer adds them as a participant (same as on the
   PR page).
 
