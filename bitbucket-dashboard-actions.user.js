@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bitbucket Dashboard PR Actions
 // @namespace    https://github.com/Robin479/browser-tweaks
-// @version      1.0.1
+// @version      1.0.2
 // @description  Adds an "Actions" column (needs work / approve / merge / decline) to the open PR lists on the Bitbucket dashboard
 // @author       Kai Kunstmann
 // @homepageURL  https://github.com/Robin479/browser-tweaks
@@ -406,7 +406,7 @@
             .${CELL_CLASS} .tm-buttons { display: flex; align-items: center; gap: 8px; }
             .${CELL_CLASS} .tm-button {
                 display: inline-flex; align-items: center; justify-content: center;
-                height: 32px; padding: 0 10px; border: none;
+                box-sizing: border-box; height: 32px; padding: 0 10px; border: none;
                 border-radius: var(--ds-border-radius, 3px);
                 background: var(--ds-background-neutral, #091e420f);
                 color: var(--ds-text-subtle, #44546f);

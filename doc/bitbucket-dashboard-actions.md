@@ -1,7 +1,7 @@
 # Bitbucket Dashboard PR Actions — working notes
 
 Script: [`../bitbucket-dashboard-actions.user.js`](../bitbucket-dashboard-actions.user.js)
-Status (2026-10-21): v1.0.1, syntax-checked; **not yet verified end-to-end in the
+Status (2026-10-21): v1.0.2, syntax-checked; **not yet verified end-to-end in the
 browser** — the user tests manually and reports back.
 
 ## Goal
@@ -109,6 +109,9 @@ PR page markup of the status buttons:
 - `retargetDependents: true` as the dialog sent it.
 - Alignment: when a PR is mergeable, an invisible vetoes placeholder (`.tm-hidden`) keeps the
   Merge buttons in one column; `.tm-vetoes` has `min-width: 46px` like the PR page's button.
+  `.tm-button` sets `box-sizing: border-box` explicitly (v1.0.2): the placeholder is a `span`
+  (content-box by default) while buttons are border-box, so `min-width` plus padding made the
+  placeholder 8px wider than the real vetoes button.
 - Reorder guard (v1.0.1): Bitbucket occasionally reloads the lists and re-sorts them (the
   dashboard requests `order=participant_status`, so freshly approved PRs move down). Trigger
   unknown (suspected: refetch on window focus, e.g. after `confirm()`); a HAR of an idle
